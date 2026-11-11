@@ -20,6 +20,8 @@ const hosted = !/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(BASE_URL);
 const ALLOWED = (process.env.ALLOWED_EMAILS || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
 const KV_URL = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
 const KV_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
+const ACCESS_CODE = (process.env.ACCESS_CODE || '').trim();
+let fails = []; // wrong access-code attempts in the last hour (all devices)
 const GOOGLE_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const APIFY_TOKEN = process.env.APIFY_TOKEN || '';
@@ -42,6 +44,13 @@ async function loadDb() {
     const j = await r.json();
     if (j.result) db = JSON.parse(j.result);
   } else { try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch {} }
+}
+// Access code: ACCESS_CODE env var, otherwise the "space:code" key in Upstash.
+async function getCode() {
+  if (ACCESS_CODE) return ACCESS_CODE;
+  if (!KV_URL) return '';
+  const r = await kv('get/space:code');
+  return r.ok ? String((await r.json()).result || '').trim() : '';
 }
 let saveTimer;
 function save() {
@@ -176,14 +185,14 @@ function userOf(req) {
   if (!s || s.exp < Date.now()) return null;
   return db.users[s.uid] || null;
 }
-function login(res, uid, profile) {
+function login(res, uid, profile, days = 30) {
   const u = (db.users[uid] ||= { rate: 300, accounts: [] });
   Object.assign(u, profile);
   const sid = crypto.randomBytes(32).toString('hex');
-  db.sessions[sid] = { uid, exp: Date.now() + 30 * 864e5 };
+  db.sessions[sid] = { uid, exp: Date.now() + days * 864e5 };
   for (const [k, s] of Object.entries(db.sessions)) if (s.exp < Date.now()) delete db.sessions[k];
   save();
-  redirect(res, '/', { 'Set-Cookie': [setCookie('sid', sid, 30 * 86400), setCookie('oauth', '', 0)] });
+  redirect(res, '/', { 'Set-Cookie': [setCookie('sid', sid, days * 86400), setCookie('oauth', '', 0)] });
 }
 
 /* ---------- routes ---------- */
@@ -220,8 +229,17 @@ const server = http.createServer(async (req, res) => {
     if (p === '/auth/local' && req.method === 'POST') {
       // Only while Google sign-in is not configured: one local profile on this computer.
       if (googleOn) return json(res, 403, { error: 'Use Google sign-in' });
-      await readBody(req);
-      return login(res, 'local', { email: '', name: 'Local profile', picture: '' });
+      const b = await readBody(req);
+      if (hosted) {
+        const now = Date.now();
+        fails = fails.filter(t => now - t < 36e5);
+        if (fails.length >= 20) return json(res, 429, { error: 'Too many wrong codes. Try again in an hour.' });
+        const code = await getCode();
+        if (!code) return json(res, 403, { error: 'No access code is set up yet.' });
+        const h = s => crypto.createHash('sha256').update(String(s)).digest();
+        if (!crypto.timingSafeEqual(h(String(b.code || '').trim()), h(code))) { fails.push(now); return json(res, 403, { error: 'Wrong code. Try again.' }); }
+      }
+      return login(res, 'local', { email: '', name: 'Space', picture: '' }, 365);
     }
     if (p === '/auth/logout' && req.method === 'POST') {
       await readBody(req);
@@ -232,7 +250,7 @@ const server = http.createServer(async (req, res) => {
     /* --- api --- */
     if (p.startsWith('/api/')) {
       const u = userOf(req);
-      if (p === '/api/me') return json(res, 200, { user: u && { name: u.name, email: u.email, picture: u.picture }, google: googleOn, local: !googleOn, apify: !!APIFY_TOKEN });
+      if (p === '/api/me') return json(res, 200, { user: u && { name: u.name, email: u.email, picture: u.picture }, google: googleOn, local: !googleOn, needCode: !googleOn && hosted, apify: !!APIFY_TOKEN });
       if (!u) return json(res, 401, { error: 'Sign in first' });
       if (p === '/api/state' && req.method === 'GET') return json(res, 200, stateFor(u));
       if (p === '/api/accounts' && req.method === 'POST') {
