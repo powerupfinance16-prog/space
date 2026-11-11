@@ -378,9 +378,8 @@ $('csv').onclick=()=>{const rows=[['date','account','platform','views','clips','
 
 /* ---------- sign-in ---------- */
 function showLogin(){$('app').hidden=true;$('login').hidden=false;
-  if(ME&&!ME.google&&!ME.local){$('gbtn').hidden=true;$('loginNote').textContent='Sign-in is not set up yet. Add the Google client ID and secret in the host settings.'}
-  else if(location.search.includes('error=notallowed'))$('loginNote').textContent='This Google account is not allowed to use this Space.';
-  else if(ME&&!ME.google){$('gbtn').hidden=true;$('lbtn').hidden=false;$('loginNote').innerHTML='Google sign-in is not set up yet. Add <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> to the <code>.env</code> file to turn it on.'}
+  if(location.search.includes('error=notallowed'))$('loginNote').textContent='This Google account is not allowed to use this Space.';
+  else if(ME&&!ME.google){$('gbtn').hidden=true;$('lbtn').hidden=false;$('loginNote').textContent='Google sign-in is not set up yet, so anyone with this link can open Space.'}
   else if(location.search.includes('error=login'))$('loginNote').textContent='Sign-in did not complete. Please try again.'}
 $('lbtn').onclick=async()=>{await fetch('/auth/local',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});location.href='/'};
 (async()=>{

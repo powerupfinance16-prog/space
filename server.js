@@ -219,7 +219,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/auth/local' && req.method === 'POST') {
       // Only while Google sign-in is not configured: one local profile on this computer.
-      if (googleOn || hosted) return json(res, 403, { error: 'Use Google sign-in' });
+      if (googleOn) return json(res, 403, { error: 'Use Google sign-in' });
       await readBody(req);
       return login(res, 'local', { email: '', name: 'Local profile', picture: '' });
     }
@@ -232,7 +232,7 @@ const server = http.createServer(async (req, res) => {
     /* --- api --- */
     if (p.startsWith('/api/')) {
       const u = userOf(req);
-      if (p === '/api/me') return json(res, 200, { user: u && { name: u.name, email: u.email, picture: u.picture }, google: googleOn, local: !googleOn && !hosted, apify: !!APIFY_TOKEN });
+      if (p === '/api/me') return json(res, 200, { user: u && { name: u.name, email: u.email, picture: u.picture }, google: googleOn, local: !googleOn, apify: !!APIFY_TOKEN });
       if (!u) return json(res, 401, { error: 'Sign in first' });
       if (p === '/api/state' && req.method === 'GET') return json(res, 200, stateFor(u));
       if (p === '/api/accounts' && req.method === 'POST') {
