@@ -1,0 +1,8 @@
+{
+  "name": "space",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Daily views, clips and earnings tracker",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=20" }
+}
